@@ -322,8 +322,7 @@ export class IssueMainService implements ICommonIssueService {
 				spellcheck: false,
 				nativeWindowOpen: true,
 				zoomFactor: zoomLevelToZoomFactor(options.zoomLevel),
-				sandbox: true,
-				contextIsolation: true,
+				sandbox: true
 			},
 			alwaysOnTop: options.alwaysOnTop
 		});
