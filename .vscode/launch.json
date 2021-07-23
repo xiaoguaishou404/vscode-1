@@ -219,6 +219,8 @@
 			"runtimeArgs": [
 				"--inspect=5875",
 				"--no-cached-data",
+				"--crash-reporter-directory",
+				"C:\\dev\\temp"
 			],
 			"webRoot": "${workspaceFolder}",
 			"cascadeTerminateToConfigurations": [
@@ -232,7 +234,8 @@
 			"browserLaunchLocation": "workspace",
 			"presentation": {
 				"hidden": true,
-			}
+			},
+			"trace": true
 		},
 		{
 			"type": "node",

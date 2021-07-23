@@ -30,7 +30,7 @@ export class GhostText {
 
 	render(text: string, debug: boolean = false): string {
 		const l = this.lineNumber;
-		return applyEdits(text,
+		return applyLineColumnEdits(text,
 			[
 				...this.parts.map(p => ({
 					range: { startLineNumber: l, endLineNumber: l, startColumn: p.column, endColumn: p.column },
@@ -59,7 +59,7 @@ class PositionOffsetTransformer {
 	}
 }
 
-function applyEdits(text: string, edits: { range: IRange, text: string }[]): string {
+function applyLineColumnEdits(text: string, edits: { range: IRange, text: string }[]): string {
 	const transformer = new PositionOffsetTransformer(text);
 	const offsetEdits = edits.map(e => {
 		const range = Range.lift(e.range);

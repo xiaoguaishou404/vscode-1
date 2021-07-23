@@ -40,6 +40,8 @@ import { Constants } from 'vs/base/common/uint';
 import { PieceTreeTextBuffer } from 'vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer';
 import { listenStream } from 'vs/base/common/stream';
 import { ArrayQueue } from 'vs/base/common/arrays';
+import { BracketPairColorizer } from 'vs/editor/common/model/bracketPairColorizer/bracketPairColorizer';
+import { DecorationProvider } from 'vs/editor/common/model/DecorationSource';
 
 function createTextBufferBuilder() {
 	return new PieceTreeTextBufferBuilder();
@@ -232,6 +234,9 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 	private readonly _onDidChangeTokens: Emitter<IModelTokensChangedEvent> = this._register(new Emitter<IModelTokensChangedEvent>());
 	public readonly onDidChangeTokens: Event<IModelTokensChangedEvent> = this._onDidChangeTokens.event;
 
+	private readonly _onDidChangeTokens1: Emitter<IModelTokensChangedEvent> = this._register(new Emitter<IModelTokensChangedEvent>());
+	public readonly onDidChangeTokens1: Event<IModelTokensChangedEvent> = this._onDidChangeTokens.event;
+
 	private readonly _onDidChangeOptions: Emitter<IModelOptionsChangedEvent> = this._register(new Emitter<IModelOptionsChangedEvent>());
 	public readonly onDidChangeOptions: Event<IModelOptionsChangedEvent> = this._onDidChangeOptions.event;
 
@@ -289,6 +294,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 	private _lastDecorationId: number;
 	private _decorations: { [decorationId: string]: IntervalNode; };
 	private _decorationsTree: DecorationsTrees;
+	private readonly _decorationProvider: DecorationProvider;
 	//#endregion
 
 	//#region Tokenization
@@ -298,6 +304,8 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 	private readonly _tokens2: TokensStore2;
 	private readonly _tokenization: TextModelTokenization;
 	//#endregion
+
+	private readonly _bracketPairColorizer;
 
 	constructor(
 		source: string | model.ITextBufferFactory,
@@ -375,6 +383,15 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 		this._tokens = new TokensStore();
 		this._tokens2 = new TokensStore2();
 		this._tokenization = new TextModelTokenization(this);
+
+		this._bracketPairColorizer = new BracketPairColorizer(this);
+		this._decorationProvider = this._bracketPairColorizer;
+
+		this._register(this._decorationProvider.onDidChangeDecorations(() => {
+			this._onDidChangeDecorations.beginDeferredEmit();
+			this._onDidChangeDecorations.fire();
+			this._onDidChangeDecorations.endDeferredEmit();
+		}));
 	}
 
 	public override dispose(): void {
@@ -410,6 +427,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 	}
 
 	private _emitContentChangedEvent(rawChange: ModelRawContentChangedEvent, change: IModelContentChangedEvent): void {
+		this._bracketPairColorizer.handleContentChanged(change);
 		if (this._isDisposing) {
 			// Do not confuse listeners by emitting any event after disposing
 			return;
@@ -1419,7 +1437,6 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 	}
 
 	private _doApplyEdits(rawOperations: model.ValidAnnotatedEditOperation[], computeUndoEdits: boolean): void | model.IValidEditOperation[] {
-
 		const oldLineCount = this._buffer.getLineCount();
 		const result = this._buffer.applyEdits(rawOperations, this._options.trimAutoWhitespace, computeUndoEdits);
 		const newLineCount = this._buffer.getLineCount();
@@ -1714,7 +1731,12 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 			return [];
 		}
 
-		return this.getLinesDecorations(lineNumber, lineNumber, ownerId, filterOutValidation);
+		const decorations = this.getLinesDecorations(lineNumber, lineNumber, ownerId, filterOutValidation);
+		const additionalDecorations = this._decorationProvider.getLineDecorations(lineNumber, ownerId, filterOutValidation);
+		if (additionalDecorations.length > 0) {
+			decorations.push(...additionalDecorations);
+		}
+		return decorations;
 	}
 
 	public getLinesDecorations(_startLineNumber: number, _endLineNumber: number, ownerId: number = 0, filterOutValidation: boolean = false): model.IModelDecoration[] {
@@ -1722,12 +1744,25 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 		let startLineNumber = Math.min(lineCount, Math.max(1, _startLineNumber));
 		let endLineNumber = Math.min(lineCount, Math.max(1, _endLineNumber));
 		let endColumn = this.getLineMaxColumn(endLineNumber);
-		return this._getDecorationsInRange(new Range(startLineNumber, 1, endLineNumber, endColumn), ownerId, filterOutValidation);
+		const range = new Range(startLineNumber, 1, endLineNumber, endColumn);
+
+		const decorations = this._getDecorationsInRange(range, ownerId, filterOutValidation);
+		const additionalDecorations = this._decorationProvider.getDecorationsInRange(range, ownerId, filterOutValidation);
+		if (additionalDecorations.length > 0) {
+			decorations.push(...additionalDecorations);
+		}
+		return decorations;
 	}
 
 	public getDecorationsInRange(range: IRange, ownerId: number = 0, filterOutValidation: boolean = false): model.IModelDecoration[] {
 		let validatedRange = this.validateRange(range);
-		return this._getDecorationsInRange(validatedRange, ownerId, filterOutValidation);
+
+		const decorations = this._getDecorationsInRange(validatedRange, ownerId, filterOutValidation);
+		const additionalDecorations = this._decorationProvider.getDecorationsInRange(range, ownerId, filterOutValidation);
+		if (additionalDecorations.length > 0) {
+			decorations.push(...additionalDecorations);
+		}
+		return decorations;
 	}
 
 	public getOverviewRulerDecorations(ownerId: number = 0, filterOutValidation: boolean = false): model.IModelDecoration[] {
@@ -2017,6 +2052,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 
 	private _emitModelTokensChangedEvent(e: IModelTokensChangedEvent): void {
 		if (!this._isDisposing) {
+			this._onDidChangeTokens1.fire(e);
 			this._onDidChangeTokens.fire(e);
 		}
 	}
